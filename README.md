@@ -38,10 +38,7 @@ curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/p
 # If you are logged in as a standard user with sudo privileges:
 curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/proxmox-cpu-unit-updater.sh | sudo bash
 
-
-* Replace `<VMID>` with the actual ID of the virtual machine you want to adjust.
-
-* Replace `<PERCENTAGE_OF_1024>` with the desired CPU share as a percentage (e.g., `50` for 50% of 1024, which would set cpuunits to 512).
+You will be prompted for the VMID and the precent to set.
 
 #### Example:
 
