@@ -3,7 +3,8 @@
 A collection of random utility scripts.
 
 ## 🚀 `proxmox-cpu-unit-updater.sh`
-
+<details>
+  <summary>Details</summary>
 A command-line utility designed for Proxmox VE sysadmins to quickly adjust CPU shares (CPU units) for individual virtual machines. This script is particularly useful when one VM is unexpectedly consuming too many CPU resources, potentially impacting the performance of other virtual machines (the "noisy neighbor" problem).
 
 ### ✨ Features
@@ -48,3 +49,4 @@ To set VM with ID `101` to 25% of the default CPU shares (equivalent to 256 cpuu
 ### 🤝 Contributing
 
 Feel free to fork this repository, open issues, or submit pull requests if you have improvements or other useful scripts to share
+</details>
