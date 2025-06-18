@@ -42,12 +42,6 @@ curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/p
 ```
 You will be prompted for the VMID and the precent to set.
 
-#### Example:
-
-To set VM with ID `101` to 25% of the default CPU shares (equivalent to 256 cpuunits):
-
-./proxmox-cpu-unit-updater.sh 101 25
-
 
 ### 🤝 Contributing
 
