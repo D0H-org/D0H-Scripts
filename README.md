@@ -33,10 +33,12 @@ apt update && apt install htop
 ### 🏃‍♂️ Usage
 
 # If you are already logged in as the root user on your Proxmox host:
-```curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/proxmox-cpu-unit-updater.sh | bash```
+##
+<tab><tab>curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/proxmox-cpu-unit-updater.sh | bash
 
 # If you are logged in as a standard user with sudo privileges:
-```curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/proxmox-cpu-unit-updater.sh | sudo bash```
+##
+<tab><tab>curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/proxmox-cpu-unit-updater.sh | sudo bash
 
 You will be prompted for the VMID and the precent to set.
 
