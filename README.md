@@ -32,7 +32,11 @@ apt update && apt install htop
 
 ### 🏃‍♂️ Usage
 
-./proxmox-cpu-unit-updater.sh &lt;VMID> &lt;PERCENTAGE_OF_1024>
+# If you are already logged in as the root user on your Proxmox host:
+curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/proxmox-cpu-unit-updater.sh | bash
+
+# If you are logged in as a standard user with sudo privileges:
+curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/proxmox-cpu-unit-updater.sh | sudo bash
 
 
 * Replace `<VMID>` with the actual ID of the virtual machine you want to adjust.
