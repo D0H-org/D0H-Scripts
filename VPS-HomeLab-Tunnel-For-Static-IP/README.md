@@ -31,17 +31,17 @@ The goal of this project is to allow you to securely expose services running in 
 
 This project consists of two main bash scripts:
 
-1.  **`vps-homelab-gateway-setup.sh`**:
+1.  **`VPS-Setup.sh`**:
     * **Runs On:** Your **VPS**.
     * **Purpose:** Sets up the VPS side of the WireGuard tunnel, including network configurations (`nftables`), SSH hardening, and Fail2Ban for the VPS itself. It also pre-generates the WireGuard keys needed for the homelab client.
 
-2.  **`homelab-setup-script.sh`**:
+2.  **`Homelab-Setup.sh`**:
     * **Runs On:** Your **Homelab server**.
     * **Purpose:** Configures your homelab as the WireGuard client. It connects to the VPS to fetch necessary keys, sets up the WireGuard tunnel, and then provides an interactive interface to manage port forwarding rules on the VPS, effectively controlling which services on your homelab are exposed to the internet. This script also handles the deployment of the `manage_vps_forwarded_ports.sh` utility script onto your VPS.
 
-    * **`manage_vps_forwarded_ports.sh` (deployed *to* VPS by `homelab-setup-script.sh`)**:
-        * **Runs On:** Your **VPS** (executed remotely by `homelab-setup-script.sh`).
-        * **Purpose:** A utility script that simply adds or removes `nftables` DNAT rules on the VPS. It does **not** restart WireGuard. The restart is orchestrated by the `homelab-setup-script.sh` from the homelab.
+    * **`manage_vps_forwarded_ports.sh` (deployed *to* VPS by `Homelab-Setup.sh`)**:
+        * **Runs On:** Your **VPS** (executed remotely by `Homelab-Setup.sh`).
+        * **Purpose:** A utility script that simply adds or removes `nftables` DNAT rules on the VPS. It does **not** restart WireGuard. The restart is orchestrated by the `Homelab-Setup.sh` from the homelab.
 
 ## Prerequisites
 
@@ -70,9 +70,9 @@ Follow these steps in order:
 
 2.  **Download the VPS setup script:**
     ```
-    curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/VPS-HomeLab-Tunnel-For-Static-IP/refs/heads/main/vps-homelab-gateway-setup.sh | bash
+    curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/VPS-Setup.sh | bash
     ```
-    chmod +x homelab-setup-script.sh
+    
     * Follow the prompts. It will detect your public interface and IP, ask you to confirm, and then proceed with installing WireGuard, `nftables`, Fail2Ban, and changing your SSH port.
     * **Crucially, it will output your Homelab Client WireGuard Private Key and the VPS WireGuard Public Key.** Copy these down carefully, especially the Homelab Private Key, as it will be immediately deleted from the VPS for security.
     * **Test your new SSH connection to the VPS on the new port (`9001` or whatever you chose) immediately** before closing your current SSH session. If you get locked out, you'll need to use your VPS provider's console.
@@ -83,16 +83,16 @@ Follow these steps in order:
 
 2.  **Download the Homelab setup script:**
     ```
-    curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/VPS-HomeLab-Tunnel-For-Static-IP/homelab-setup-script.sh```
+    curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/Homelab-Setup.sh | bash```
     ```
-    chmod +x homelab-setup-script.sh
+
     * The script will prompt you for your **VPS's Public IP, SSH username, and SSH password**. This is used to fetch keys and deploy the port management script.
     * It will install necessary prerequisites on your homelab, configure WireGuard, and start the service.
     * **IMPORTANT SECURITY NOTE:** The script will confirm that UFW and Fail2Ban on the homelab are stopped/disabled. This means **all external security relies on your VPS**. If your VPS is compromised, your homelab services would be directly exposed through the tunnel. Ensure your VPS is well-secured.
 
 ### Step 3: Manage Port Forwarding (from Homelab)
 
-After the `homelab-setup-script.sh` completes its initial setup, it will present an interactive menu for managing ports on the VPS.
+After the `Homelab-Setup.sh` completes its initial setup, it will present an interactive menu for managing ports on the VPS.
 
 You can use the following commands in the interactive prompt:
 
@@ -111,7 +111,7 @@ You can use the following commands in the interactive prompt:
 * **`done`**: Exits the port management interface.
 
 **How it works (behind the scenes):**
-When you `add` or `remove` a port, the `homelab-setup-script.sh` remotely executes the `manage_vps_forwarded_ports.sh` script on your VPS. This script updates the `nftables` rules. Immediately after, the `homelab-setup-script.sh` launches a temporary helper script on the VPS via `screen -dm` (detached mode) to restart the WireGuard service. This restart applies the new `nftables` rules. Your SSH session on the homelab won't drop because the WireGuard restart on the VPS happens in a separate, detached process. The homelab script then waits 30 seconds and attempts to reconnect to verify the changes.
+When you `add` or `remove` a port, the `Homelab-Setup.sh` remotely executes the `manage_vps_forwarded_ports.sh` script on your VPS. This script updates the `nftables` rules. Immediately after, the `Homelab-Setup.sh` launches a temporary helper script on the VPS via `screen -dm` (detached mode) to restart the WireGuard service. This restart applies the new `nftables` rules. Your SSH session on the homelab won't drop because the WireGuard restart on the VPS happens in a separate, detached process. The homelab script then waits 30 seconds and attempts to reconnect to verify the changes.
 
 ## Security Considerations
 
