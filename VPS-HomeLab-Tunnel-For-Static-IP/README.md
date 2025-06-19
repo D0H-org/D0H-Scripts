@@ -139,3 +139,29 @@ When you `add` or `remove` a port, the `Homelab-Setup.sh` remotely executes the 
     * Verify the port forwarding rule is correctly added on the VPS (`sudo nft list ruleset | grep 'prerouting'`).
     * Ensure the service is actually listening on the correct port on your homelab.
     * Check if any local firewall on the homelab (if you re-enabled it) is blocking the inbound traffic on the `wg0` interface. (In this setup, UFW and Fail2Ban are explicitly disabled on the homelab for simplicity, but if you deviated, check them).
+
+
+
+## Uninstalling the Setup
+
+If you need to revert the changes made by these setup scripts on either your VPS or your Homelab, you can use the unified uninstall script. **Always take a snapshot/backup before running this script, especially for the VPS.**
+
+### Unified Uninstall Script (`WG-Script-Remover.sh`)
+
+This single script can uninstall the setup from either your VPS or your Homelab, depending on your choice.
+
+1.  **Download the script to the system you want to uninstall (either your VPS or your Homelab):**
+    ```
+    curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/WG-Script-Remover.sh | bash
+2.  **Follow the prompt:** The script will ask you whether you are uninstalling the **VPS Gateway** or the **Homelab Client**. Enter `1` for VPS or `2` for Homelab.
+
+    * **If uninstalling VPS:**
+        * The script will remove WireGuard, its configurations, `nftables` rules related to the setup, Fail2Ban, and attempt to restore your SSH port to its state before setup (or default to port 22 if no backup found).
+        * You may experience a brief SSH disconnection when services restart.
+        * If UFW was active on the VPS before setup, it will not be re-enabled by this script; you would need to reinstall and configure it manually if desired.
+
+    * **If uninstalling Homelab:**
+        * The script will remove WireGuard and its client configurations.
+        * Since UFW and Fail2Ban were disabled on the homelab by the setup script, this uninstall script will confirm their state but will **not** re-enable them. You may need to manually re-enable and configure them on your homelab if you wish to use them again.
+
+This unified script aims to simplify the cleanup process for your homelab gateway setup.
