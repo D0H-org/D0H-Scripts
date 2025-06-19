@@ -36,7 +36,7 @@ This project consists of two main bash scripts:
     * **Purpose:** Sets up the VPS side of the WireGuard tunnel, including network configurations (`nftables`), SSH hardening, and Fail2Ban for the VPS itself. It also pre-generates the WireGuard keys needed for the homelab client.
 
 2.  **`Homelab-Setup.sh`**:
-    * **Runs On:** Your **Homelab server**.
+    * **Runs On:** Your **Homelab server** (standard Linux distribution like Ubuntu).
     * **Purpose:** Configures your homelab as the WireGuard client. It connects to the VPS to fetch necessary keys, sets up the WireGuard tunnel, and then provides an interactive interface to manage port forwarding rules on the VPS, effectively controlling which services on your homelab are exposed to the internet. This script also handles the deployment of the `manage_vps_forwarded_ports.sh` utility script onto your VPS.
 
     * **`manage_vps_forwarded_ports.sh` (deployed *to* VPS by `Homelab-Setup.sh`)**:
@@ -69,30 +69,70 @@ Follow these steps in order:
 1.  **SSH into your VPS** using its current public IP and default SSH port (usually 22).
 
 2.  **Download the VPS setup script:**
+    ```bash
+    curl -sL [https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/VPS-Setup.sh](https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/VPS-Setup.sh) | bash
     ```
-    curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/VPS-Setup.sh | bash
-    ```
-    
+
     * Follow the prompts. It will detect your public interface and IP, ask you to confirm, and then proceed with installing WireGuard, `nftables`, Fail2Ban, and changing your SSH port.
     * **Crucially, it will output your Homelab Client WireGuard Private Key and the VPS WireGuard Public Key.** Copy these down carefully, especially the Homelab Private Key, as it will be immediately deleted from the VPS for security.
     * **Test your new SSH connection to the VPS on the new port (`9001` or whatever you chose) immediately** before closing your current SSH session. If you get locked out, you'll need to use your VPS provider's console.
 
-### Step 2: Prepare your Homelab Server
+### Step 2: Prepare your Homelab Server (Choose One Option Below)
+
+You have two primary ways to set up your homelab as the WireGuard client: a standard Linux distribution or an OPNsense firewall appliance.
+
+#### Option A: Standard Linux Setup (using `Homelab-Setup.sh`)
+
+This is the default setup where your homelab runs a standard Linux distribution (like Ubuntu).
 
 1.  **SSH into your Homelab server.**
 
 2.  **Download the Homelab setup script:**
-    ```
-    curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/Homelab-Setup.sh | bash```
+    ```bash
+    curl -sL [https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/Homelab-Setup.sh](https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/Homelab-Setup.sh) | bash
     ```
 
     * The script will prompt you for your **VPS's Public IP, SSH username, and SSH password**. This is used to fetch keys and deploy the port management script.
     * It will install necessary prerequisites on your homelab, configure WireGuard, and start the service.
     * **IMPORTANT SECURITY NOTE:** The script will confirm that UFW and Fail2Ban on the homelab are stopped/disabled. This means **all external security relies on your VPS**. If your VPS is compromised, your homelab services would be directly exposed through the tunnel. Ensure your VPS is well-secured.
 
+#### Option B: OPNsense Firewall Alternative
+
+This is an alternative setup where your homelab uses OPNsense as its network gateway, providing a robust firewall and routing solution with a web-based GUI. In this scenario, the `Homelab-Setup.sh` script is NOT used for configuring WireGuard on the homelab.
+
+1.  **Install OPNsense:**
+    * Download the OPNsense ISO from its [official website](https://opnsense.org/download/).
+    * Install OPNsense on a dedicated physical machine with at least two network interfaces (one for the WireGuard WAN, one for your internal LAN) or as a virtual machine within a hypervisor (e.g., Proxmox, ESXi, VirtualBox, KVM).
+    * Configure OPNsense's initial network interfaces (e.g., assign one interface to WAN/Internet, another to LAN for your internal homelab network).
+
+2.  **Configure WireGuard Client on OPNsense:**
+    * Access the OPNsense web GUI (usually via its LAN IP address).
+    * Navigate to **VPN -> WireGuard**.
+    * **Create a new Local Configuration (Tunnel):**
+        * Set `Listen Port` to 51820 (or any chosen port if different, but 51820 is standard).
+        * Set `Address` to your homelab's WireGuard IP (e.g., `10.0.0.2/32` and `fd42:42:42::2/128`).
+        * Copy the `PrivateKey` for the homelab client that was output by the `VPS-Setup.sh` script (from Step 1). Paste this into OPNsense.
+    * **Add a new Peer (for the VPS):**
+        * Set `Public Key` to the VPS's WireGuard Public Key (obtained from `VPS-Setup.sh` output).
+        * Set `Endpoint` to your VPS's public IP address and WireGuard port (e.g., `YOUR_VPS_PUBLIC_IP:51820`).
+        * Set `Allowed IPs` to `0.0.0.0/0, ::/0` to route all traffic through the tunnel.
+        * Set `Persistent Keepalive` to 25.
+    * **Enable WireGuard:** Ensure the WireGuard service is enabled and applied in OPNsense.
+
+3.  **Configure OPNsense Firewall and NAT/Reverse Proxy:**
+    * In OPNsense, navigate to **Firewall -> Rules** and create rules to allow traffic through the WireGuard interface (`wg0` or whatever OPNsense names it) to your internal homelab network.
+    * Configure **NAT -> Port Forward** rules within OPNsense to direct incoming traffic from the WireGuard tunnel's IP (`10.0.0.2`) to your specific internal homelab services (e.g., `192.168.1.100:8080`).
+    * For routing domains, you can install and configure a reverse proxy plugin (like **HAProxy** which is available as a plugin in OPNsense under **System -> Firmware -> Plugins**) within OPNsense. This will provide a user-friendly GUI for managing domain-based routing directly on your homelab.
+    * The `nftables` rules on your VPS will forward traffic from the internet to OPNsense's WireGuard IP (`10.0.0.2`), and OPNsense will then forward it to the actual internal IP and port of your service.
+
+**Important Note for OPNsense Setup:**
+When using OPNsense, the `Homelab-Setup.sh` script (for the standard Linux setup) is **not** used to configure WireGuard. All WireGuard client configuration, including key management and peer setup, is handled directly within the OPNsense web GUI. Furthermore, the `manage_vps_forwarded_ports.sh` script (which is deployed by `Homelab-Setup.sh` during its initial run) becomes irrelevant for *dynamically* managing external port forwarding from the VPS's public IP to OPNsense's WireGuard IP. Only the initially setup ports (53, 20-52, 54-9000) as configured by `VPS-Setup.sh` will be forwarded.
+
 ### Step 3: Manage Port Forwarding (from Homelab)
 
-After the `Homelab-Setup.sh` completes its initial setup, it will present an interactive menu for managing ports on the VPS.
+After the `Homelab-Setup.sh` (for standard Linux homelab) or your OPNsense setup completes its initial WireGuard configuration, you can manage port forwarding.
+
+If you are using the standard Linux homelab setup, the `Homelab-Setup.sh` provides an interactive menu:
 
 You can use the following commands in the interactive prompt:
 
@@ -120,7 +160,7 @@ When you `add` or `remove` a port, the `Homelab-Setup.sh` remotely executes the 
     * Regular security updates.
     * Minimal services running on it beyond what's strictly necessary for this gateway function.
 
-* **Homelab Internal Security:** While external threats are filtered by the VPS, ensure your homelab still has basic internal security (e.g., proper user permissions, up-to-date software, internal firewall if exposing services to other local network segments not behind the tunnel).
+* **Homelab Internal Security:** While external threats are filtered by the VPS, ensure your homelab still has basic internal security (e.g., proper user permissions, up-to-date software, internal firewall if exposing services to other local network segments not behind the tunnel). When using OPNsense, its robust firewall capabilities will manage internal network security.
 
 * **VPS Provider Firewall:** Do not forget to configure your VPS provider's external firewall (security groups, ACLs) to only allow traffic to your chosen SSH port and the WireGuard UDP port (51820), and any other public ports you explicitly forward.
 
@@ -129,18 +169,20 @@ When you `add` or `remove` a port, the `Homelab-Setup.sh` remotely executes the 
 * **SSH Disconnections:** If you experience frequent SSH disconnections when directly working on the VPS, use `screen` or `tmux` on the VPS to run commands that might restart network services.
 
 * **WireGuard Tunnel Not Working:**
-    * Check `sudo systemctl status wg-quick@wg0` on both VPS and homelab.
-    * Check `sudo wg show` on both to see if a handshake occurred (`latest handshake` field).
+    * Check `sudo systemctl status wg-quick@wg0` on the VPS.
+    * On the Homelab (standard Linux) or OPNsense, check WireGuard status (e.g., `sudo wg show` or OPNsense GUI status).
     * Verify `nftables` rules on the VPS: `sudo nft list ruleset`.
     * Ensure VPS provider's firewall allows required inbound ports (SSH, WireGuard).
-    * Double-check IP addresses and public keys in `wg0.conf` files on both sides.
+    * Double-check IP addresses and public keys in `wg0.conf` files (or OPNsense configuration) on both sides.
+    * If using OPNsense, verify its internal firewall rules and routing.
 
 * **Services Not Accessible:**
     * Verify the port forwarding rule is correctly added on the VPS (`sudo nft list ruleset | grep 'prerouting'`).
     * Ensure the service is actually listening on the correct port on your homelab.
-    * Check if any local firewall on the homelab (if you re-enabled it) is blocking the inbound traffic on the `wg0` interface. (In this setup, UFW and Fail2Ban are explicitly disabled on the homelab for simplicity, but if you deviated, check them).
+    * Check if any local firewall on the homelab (if you re-enabled it) is blocking the inbound traffic on the `wg0` interface. (In the standard Linux setup, UFW and Fail2Ban are explicitly disabled on the homelab for simplicity, but if you deviated, check them).
+    * If using OPNsense, ensure its internal NAT and firewall rules are correctly forwarding traffic from its WireGuard interface to your service's internal IP and port.
 
-
+* **"sshpass: command not found"**: Install it on your homelab: `sudo apt install sshpass`.
 
 ## Uninstalling the Setup
 
@@ -151,9 +193,15 @@ If you need to revert the changes made by these setup scripts on either your VPS
 This single script can uninstall the setup from either your VPS or your Homelab, depending on your choice.
 
 1.  **Download the script to the system you want to uninstall (either your VPS or your Homelab):**
+    ```bash
+    wget https://your-repo-link/WG-Script-Remover.sh # Replace with actual download link or copy-paste
+    chmod +x WG-Script-Remover.sh
     ```
-    curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/WG-Script-Remover.sh | bash
-2.  **Follow the prompt:** The script will ask you whether you are uninstalling the **VPS Gateway** or the **Homelab Client**. Enter `1` for VPS or `2` for Homelab.
+2.  **Run the script:**
+    ```bash
+    sudo ./WG-Script-Remover.sh
+    ```
+3.  **Follow the prompt:** The script will ask you whether you are uninstalling the **VPS Gateway** or the **Homelab Client**. Enter `1` for VPS or `2` for Homelab.
 
     * **If uninstalling VPS:**
         * The script will remove WireGuard, its configurations, `nftables` rules related to the setup, Fail2Ban, and attempt to restore your SSH port to its state before setup (or default to port 22 if no backup found).
