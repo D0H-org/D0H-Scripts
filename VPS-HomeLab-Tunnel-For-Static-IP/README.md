@@ -69,8 +69,8 @@ Follow these steps in order:
 1.  **SSH into your VPS** using its current public IP and default SSH port (usually 22).
 
 2.  **Download the VPS setup script:**
-    ```bash
-    curl -sL [https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/VPS-Setup.sh](https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/VPS-Setup.sh) | bash
+    ```
+    curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/VPS-Setup.sh | bash
     ```
 
     * Follow the prompts. It will detect your public interface and IP, ask you to confirm, and then proceed with installing WireGuard, `nftables`, Fail2Ban, and changing your SSH port.
@@ -88,8 +88,8 @@ This is the default setup where your homelab runs a standard Linux distribution 
 1.  **SSH into your Homelab server.**
 
 2.  **Download the Homelab setup script:**
-    ```bash
-    curl -sL [https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/Homelab-Setup.sh](https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/Homelab-Setup.sh) | bash
+    ```
+    curl -sL https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/Homelab-Setup.sh | bash
     ```
 
     * The script will prompt you for your **VPS's Public IP, SSH username, and SSH password**. This is used to fetch keys and deploy the port management script.
@@ -194,7 +194,8 @@ This single script can uninstall the setup from either your VPS or your Homelab,
 
 1.  **Download the script to the system you want to uninstall (either your VPS or your Homelab):**
     ```bash
-    wget https://your-repo-link/WG-Script-Remover.sh # Replace with actual download link or copy-paste
+    wget https://raw.githubusercontent.com/D0H-org/D0H-Scripts/refs/heads/main/VPS-HomeLab-Tunnel-For-Static-IP/WG-Script-Remover.sh 
+
     chmod +x WG-Script-Remover.sh
     ```
 2.  **Run the script:**
