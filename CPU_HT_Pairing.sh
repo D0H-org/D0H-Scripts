@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# This script parses 'lscpu -e' output to identify physical CPU cores
+# and their associated hyperthreads (logical CPUs) on a Proxmox host.
+# It then displays these pairings, organized by NUMA node and socket.
+# Useful for CPU pinning configurations for VDS style Virtual Machines.
+
 # Function to parse lscpu -e output and format it for display
 parse_lscpu_output() {
     # Check if lscpu command exists
