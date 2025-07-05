@@ -6,7 +6,7 @@
 #              using wondershaper. It ensures the limits are persistent across reboots
 #              by configuring a systemd service.
 #
-# Usage: ./wondershaper_bandwidth_limiter [OPTIONS] <bandwidth_value> <unit>
+# Usage: ./wondershaper_bandwidth_limiter.sh [OPTIONS] <bandwidth_value> <unit>
 #
 # Arguments:
 #   <bandwidth_value>: The numeric value of your total monthly bandwidth (e.g., 100, 1).
@@ -77,9 +77,13 @@ usage() {
     echo "             using wondershaper. It ensures the limits are persistent across reboots"
     echo "             by configuring a systemd service."
     echo ""
-    echo "Usage: $0 [OPTIONS]"
+    echo "Usage: $0 [OPTIONS] <bandwidth_value> <unit>"
     echo ""
-    echo 
+    echo "Arguments:"
+    echo "  <bandwidth_value>: The numeric value of your total monthly bandwidth (e.g., 100, 1)."
+    echo "  <unit>: The unit of bandwidth, either 'GB' for Gigabytes or 'TB' for Terabytes."
+    echo "          These two arguments are mandatory if no corresponding options are used."
+    echo ""
     echo "Options (can be used instead of or in combination with positional arguments):"
     echo "  -b, --bandwidth-value <value>   : Set the monthly bandwidth value (e.g., 100)."
     echo "  -u, --unit <unit>               : Set the bandwidth unit ('GB' or 'TB')."
@@ -279,7 +283,10 @@ SECONDS_IN_MONTH=$((30 * 24 * 60 * 60))
 AVERAGE_SPEED_GBPS=$(awk "BEGIN {printf \"%.4f\n\", $BANDWIDTH_GIGABITS_MONTH / $SECONDS_IN_MONTH}")
 TARGET_SPEED_GBPS=$(awk "BEGIN {printf \"%.4f\n\", $AVERAGE_SPEED_GBPS * $SPEED_MULTIPLIER}")
 TARGET_SPEED_MBPS=$(awk "BEGIN {printf \"%.2f\n\", $TARGET_SPEED_GBPS * 1000}")
-TARGET_SPEED_KBPS=$(awk "BEGIN {printf \"%.0f\n\", $TARGET_SPEED_MBPS * 125}")
+
+# Convert to Kilobits per second (Kbps) for wondershaper
+# 1 Mbps = 1000 Kbps
+TARGET_SPEED_KBPS_FOR_WONDERSHAPER=$(awk "BEGIN {printf \"%.0f\n\", $TARGET_SPEED_MBPS * 1000}")
 
 echo "--- Bandwidth Calculation ---"
 echo "Monthly Bandwidth: $BANDWIDTH_VALUE $UNIT"
@@ -288,7 +295,7 @@ echo "Seconds in a month (approx 30 days): $SECONDS_IN_MONTH seconds"
 echo "-----------------------------"
 echo "Average sustained speed to use all bandwidth: ${AVERAGE_SPEED_GBPS} Gbps"
 echo "Target connection speed (${SPEED_PERCENTAGE}% of average): ${TARGET_SPEED_MBPS} Mbps"
-echo "This translates to approximately ${TARGET_SPEED_KBPS} KB/s for wondershaper."
+echo "This translates to approximately ${TARGET_SPEED_KBPS_FOR_WONDERSHAPER} Kbps for wondershaper."
 echo ""
 
 # --- Wondershaper Installation Check ---
@@ -310,6 +317,43 @@ if ! command -v wondershaper &> /dev/null; then
     fi
 else
     echo "wondershaper is already installed."
+fi
+echo ""
+
+# --- Kernel Module and tc functionality check ---
+# Wondershaper relies on the sch_htb (Hierarchical Token Bucket) qdisc kernel module.
+# This section attempts to load it and verifies basic tc functionality.
+echo "Verifying kernel modules and tc functionality..."
+if ! lsmod | grep -q sch_htb; then
+    echo "sch_htb kernel module not loaded. Attempting to load it..."
+    sudo modprobe sch_htb
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to load sch_htb kernel module. This might be due to a custom kernel"
+        echo "       or a virtualized environment that doesn't support it. Wondershaper may not work."
+        read -p "Do you want to continue anyway? (y/N): " continue_choice
+        if ! [[ "$continue_choice" =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        echo "sch_htb module loaded successfully."
+    fi
+fi
+
+# Basic tc functionality test
+# Try to add a dummy qdisc and then delete it to ensure tc commands work.
+DUMMY_IF="lo" # Use loopback interface for a safe test
+echo "Performing a basic tc functionality test on $DUMMY_IF..."
+sudo tc qdisc add dev "$DUMMY_IF" root handle 1:0 pfifo >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "Warning: Basic 'tc' command test failed on $DUMMY_IF. This could indicate an issue with"
+    echo "         your kernel's traffic control support. Wondershaper might not function correctly."
+    read -p "Do you want to continue anyway? (y/N): " continue_choice
+    if ! [[ "$continue_choice" =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+else
+    echo "Basic tc functionality test passed."
+    sudo tc qdisc del dev "$DUMMY_IF" root >/dev/null 2>&1 # Clean up
 fi
 echo ""
 
@@ -363,8 +407,8 @@ fi
 echo ""
 
 # --- Unmetered Download Question (Interactive or CLI) ---
-DOWNLOAD_LIMIT_KB="" # Initialize
-UPLOAD_LIMIT_KB=""   # Initialize
+DOWNLOAD_LIMIT_KBPS="" # Initialize
+UPLOAD_LIMIT_KBPS=""   # Initialize
 UNMETERED_DL_CONFIRMED="" # To store final decision
 
 if [ -n "$CLI_DOWNLOAD_UNMETERED" ]; then
@@ -378,10 +422,10 @@ else
 fi
 
 if [[ "$UNMETERED_DL_CONFIRMED" =~ ^[Yy]$ ]]; then
-    DOWNLOAD_LIMIT_KB=999999999 # A very high number to simulate unlimited download
-    UPLOAD_LIMIT_KB=$TARGET_SPEED_KBPS # Upload gets 100% of the calculated speed
+    DOWNLOAD_LIMIT_KBPS=999999999 # A very high number to simulate unlimited download
+    UPLOAD_LIMIT_KBPS=$TARGET_SPEED_KBPS_FOR_WONDERSHAPER # Upload gets 100% of the calculated speed
     echo "Download limit set to effectively unlimited."
-    echo "Upload limit will be set to ${UPLOAD_LIMIT_KB} KB/s."
+    echo "Upload limit will be set to ${UPLOAD_LIMIT_KBPS} Kbps."
 else
     # If both are metered, ask for custom percentages or use CLI split
     DL_PERCENT=50
@@ -433,19 +477,19 @@ else
     fi
 
     # Calculate limits based on custom percentages
-    DOWNLOAD_LIMIT_KB=$(awk "BEGIN {printf \"%.0f\n\", $TARGET_SPEED_KBPS * ($DL_PERCENT / 100)}")
-    UPLOAD_LIMIT_KB=$(awk "BEGIN {printf \"%.0f\n\", $TARGET_SPEED_KBPS * ($UL_PERCENT / 100)}")
+    DOWNLOAD_LIMIT_KBPS=$(awk "BEGIN {printf \"%.0f\n\", $TARGET_SPEED_KBPS_FOR_WONDERSHAPER * ($DL_PERCENT / 100)}")
+    UPLOAD_LIMIT_KBPS=$(awk "BEGIN {printf \"%.0f\n\", $TARGET_SPEED_KBPS_FOR_WONDERSHAPER * ($UL_PERCENT / 100)}")
 
-    echo "Download limit will be set to ${DOWNLOAD_LIMIT_KB} KB/s (${DL_PERCENT}% of calculated total)."
-    echo "Upload limit will be set to ${UPLOAD_LIMIT_KB} KB/s (${UL_PERCENT}% of calculated total)."
+    echo "Download limit will be set to ${DOWNLOAD_LIMIT_KBPS} Kbps (${DL_PERCENT}% of calculated total)."
+    echo "Upload limit will be set to ${UPLOAD_LIMIT_KBPS} Kbps (${UL_PERCENT}% of calculated total)."
 fi
 echo ""
 
 # --- Apply Wondershaper Limits (Immediate) ---
 echo "Applying wondershaper limits to $SELECTED_NIC immediately..."
-echo "Command: sudo wondershaper $SELECTED_NIC $DOWNLOAD_LIMIT_KB $UPLOAD_LIMIT_KB"
+echo "Command: sudo wondershaper $SELECTED_NIC $DOWNLOAD_LIMIT_KBPS $UPLOAD_LIMIT_KBPS"
 
-sudo wondershaper "$SELECTED_NIC" "$DOWNLOAD_LIMIT_KB" "$UPLOAD_LIMIT_KB"
+sudo wondershaper "$SELECTED_NIC" "$DOWNLOAD_LIMIT_KBPS" "$UPLOAD_LIMIT_KBPS"
 
 if [ $? -eq 0 ]; then
     echo "Wondershaper limits applied successfully for the current session."
@@ -453,6 +497,7 @@ if [ $? -eq 0 ]; then
     sudo wondershaper "$SELECTED_NIC" status
 else
     echo "Error: Failed to apply wondershaper limits for the current session."
+    echo "Please review the errors above. This might be due to kernel module issues or misconfiguration."
     exit 1
 fi
 
@@ -468,9 +513,9 @@ sudo bash -c "cat <<EOF > /etc/systemd/wondershaper.conf
 # Adapter
 IFACE=\"$SELECTED_NIC\"
 # Download rate in Kbps
-DSPEED=\"$DOWNLOAD_LIMIT_KB\"
+DSPEED=\"$DOWNLOAD_LIMIT_KBPS\"
 # Upload rate in Kbps
-USPEED=\"$UPLOAD_LIMIT_KB\"
+USPEED=\"$UPLOAD_LIMIT_KBPS\"
 EOF"
 
 if [ $? -ne 0 ]; then
