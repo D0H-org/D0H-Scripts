@@ -41,20 +41,21 @@
 #     ./wondershaper_bandwidth_limiter.sh -b 500 -u GB -p 150 -e enp0s3 -d true
 #
 # Requirements:
-#   - wondershaper: The script will check for its installation and offer to install it.
-#   - sudo privileges: Required for installing wondershaper and configuring systemd.
+#   - wondershaper: This script will automatically install it from the official
+#                   GitHub repository if not found or if an outdated version is detected.
+#   - sudo privileges: Required for installing dependencies, wondershaper, and configuring systemd.
 #   - awk: For floating-point arithmetic (usually pre-installed on most Linux systems).
 #
 # Persistence:
 #   The script configures a systemd service to make the wondershaper limits
-#   persistent across system reboots.
+#   persistent across reboots.
 #
 # Notes:
 #   - The calculated speed is an ESTIMATE. Actual usage can vary.
 #   - The percentage multiplier allows for burstable speeds, but consistent usage
 #     at this rate will likely exceed your monthly quota depending on your setting.
 #   - You can clear current limits with: sudo wondershaper clear <interface>
-#   - To disable persistence: sudo systemctl disable --now wondershaper.service
+#   - To disable persistence, run: sudo systemctl disable --now wondershaper.service
 
 # --- Configuration ---
 # Default multiplier for the calculated average speed
@@ -88,8 +89,8 @@ usage() {
     echo "  -b, --bandwidth-value <value>   : Set the monthly bandwidth value (e.g., 100)."
     echo "  -u, --unit <unit>               : Set the bandwidth unit ('GB' or 'TB')."
     echo "  -d, --download-unmetered <bool> : Set download as unmetered ('true' or 'false')."
-    echo "                                    If 'true', download is unlimited, upload gets 100% of calculated speed."
-    echo "                                    If 'false', download and upload limits are set based on split."
+    echo "                                    If 'true', download is unlimited, upload gets 100% of calculated speed.
+                                    If 'false', download and upload limits are set based on split."
     echo "  -s, --split <DL_perc>/<UL_perc> : Set download/upload percentage split (e.g., '70/30')."
     echo "                                    Only applies if download is NOT unmetered."
     echo "                                    Percentages must be positive and sum to 100."
@@ -112,21 +113,21 @@ usage() {
     echo "    ./wondershaper_bandwidth_limiter.sh -b 500 -u GB -p 150 -e enp0s3 -d true"
     echo ""
     echo "Requirements:"
-    echo "  - wondershaper: The script will check for its installation and offer to install it."
-    echo "  - sudo privileges: Required for installing wondershaper and configuring systemd."
+    echo "  - wondershaper: This script will automatically install it from the official"
+    echo "                  GitHub repository if not found or if an outdated version is detected."
+    echo "  - sudo privileges: Required for installing dependencies, wondershaper, and configuring systemd."
     echo "  - awk: For floating-point arithmetic (usually pre-installed on most Linux systems)."
     echo ""
     echo "Persistence:"
     echo "  The script configures a systemd service to make the wondershaper limits"
-    echo "  persistent across system reboots."
+    echo "  persistent across reboots."
     echo ""
-    echo "Notes:"
-    echo "  - The calculated speed is an ESTIMATE. Actual usage can vary."
+    echo "Notes:
+    - The calculated speed is an ESTIMATE. Actual usage can vary."
     echo "  - The percentage multiplier allows for burstable speeds, but consistent usage"
     echo "    at this rate will likely exceed your monthly quota depending on your setting."
     echo "  - You can clear current limits with: sudo wondershaper clear <interface>"
-    echo "  - To disable persistence: sudo systemctl disable --now wondershaper.service"
-    echo "  - Then you might want to remove the config and service files manually if desired."
+    echo "  - To disable persistence, run: sudo systemctl disable --now wondershaper.service"
     exit 0 # Exit with 0 for successful help display
 }
 
@@ -264,7 +265,7 @@ fi
 # Validate SPEED_PERCENTAGE
 if ! [[ "$SPEED_PERCENTAGE" =~ ^[0-9]+$ ]] || [ "$SPEED_PERCENTAGE" -le 0 ]; then
     echo "Error: Percentage must be a positive number. Using default ${DEFAULT_SPEED_PERCENTAGE}%."
-    SPEED_PERCENTAGE=$DEFAULT_SPEED_PERCENTAGE
+    SPEED_PERCENTAGE=$DEFAULT_PERCENTAGE
 fi
 SPEED_MULTIPLIER=$(awk "BEGIN {printf \"%.2f\n\", $SPEED_PERCENTAGE / 100}")
 
@@ -298,32 +299,97 @@ echo "Target connection speed (${SPEED_PERCENTAGE}% of average): ${TARGET_SPEED_
 echo "This translates to approximately ${TARGET_SPEED_KBPS_FOR_WONDERSHAPER} Kbps for wondershaper."
 echo ""
 
-# --- Wondershaper Installation Check ---
-echo "Checking for wondershaper installation..."
-if ! command -v wondershaper &> /dev/null; then
-    echo "wondershaper is not installed."
-    read -p "Do you want to install wondershaper now? (y/N): " install_choice
-    if [[ "$install_choice" =~ ^[Yy]$ ]]; then
-        echo "Attempting to install wondershaper..."
-        sudo apt update && sudo apt install wondershaper -y
+# --- Wondershaper Installation/Update Logic ---
+echo "Managing wondershaper installation..."
+
+# Function to install a package
+install_package() {
+    local package_name=$1
+    if ! command -v "$package_name" &> /dev/null; then
+        echo "$package_name is not installed. Installing $package_name..."
+        sudo apt update && sudo apt install -y "$package_name"
         if [ $? -ne 0 ]; then
-            echo "Error: Failed to install wondershaper. Please install it manually and try again."
+            echo "Error: Failed to install $package_name. Please install it manually and try again."
             exit 1
         fi
-        echo "wondershaper installed successfully."
+        echo "$package_name installed successfully."
+    fi
+}
+
+# Check for and remove apt-installed wondershaper if present
+if apt list --installed wondershaper &> /dev/null; then
+    echo "Detected existing wondershaper package from apt. It might be outdated."
+    read -p "Do you want to remove the apt package and install the latest from GitHub? (Y/n): " remove_apt_choice
+    remove_apt_choice=${remove_apt_choice:-Y}
+    if [[ "$remove_apt_choice" =~ ^[Yy]$ ]]; then
+        echo "Removing apt-installed wondershaper..."
+        sudo apt remove --purge wondershaper -y
+        if [ $? -ne 0 ]; then
+            echo "Warning: Failed to remove apt-installed wondershaper. Continuing with GitHub install, but conflicts might occur."
+        else
+            echo "Apt-installed wondershaper removed."
+        fi
     else
-        echo "wondershaper is required. Exiting."
+        echo "Keeping apt-installed wondershaper. Note: This might lead to unexpected behavior if it's an old version."
+    fi
+fi
+
+# Ensure git and make are installed for source compilation
+install_package git
+install_package make
+
+# Install wondershaper from GitHub if not already installed or if apt version was removed
+if ! command -v wondershaper &> /dev/null || [[ "$remove_apt_choice" =~ ^[Yy]$ ]]; then
+    echo "Installing/Reinstalling wondershaper from GitHub..."
+    TEMP_DIR=$(mktemp -d)
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to create temporary directory. Exiting."
         exit 1
     fi
+    echo "Cloning wondershaper into $TEMP_DIR..."
+    git clone https://github.com/magnific0/wondershaper.git "$TEMP_DIR/wondershaper"
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to clone wondershaper repository. Exiting."
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+
+    cd "$TEMP_DIR/wondershaper"
+    sudo make install
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to install wondershaper from source. Please check the output above."
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+    cd - > /dev/null # Go back to previous directory
+    rm -rf "$TEMP_DIR" # Clean up temporary directory
+    echo "wondershaper installed successfully from GitHub source."
 else
-    echo "wondershaper is already installed."
+    echo "Latest wondershaper from GitHub is already installed or opted to keep existing apt version."
+fi
+echo ""
+
+# --- Clean up ifb0 device (moved here for earlier cleanup) ---
+# Remove ifb0 device if it exists (newer wondershaper handles this internally)
+# This ensures a clean state before kernel module checks or interface detection.
+if ip link show ifb0 &> /dev/null; then
+    echo "Removing existing ifb0 device (newer wondershaper manages this internally)..."
+    sudo ip link set dev ifb0 down >/dev/null 2>&1
+    sudo ip link delete ifb0 type ifb >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Warning: Failed to remove old ifb0 device. This might indicate lingering tc rules or a permission issue."
+    else
+        echo "Old ifb0 device removed."
+    fi
 fi
 echo ""
 
 # --- Kernel Module and tc functionality check ---
-# Wondershaper relies on the sch_htb (Hierarchical Token Bucket) qdisc kernel module.
-# This section attempts to load it and verifies basic tc functionality.
+# Wondershaper relies on the sch_htb (Hierarchical Token Bucket) qdisc kernel module
+# and the ifb (Intermediate Functional Block) module for ingress shaping.
 echo "Verifying kernel modules and tc functionality..."
+
+# Check and load sch_htb module
 if ! lsmod | grep -q sch_htb; then
     echo "sch_htb kernel module not loaded. Attempting to load it..."
     sudo modprobe sch_htb
@@ -336,6 +402,22 @@ if ! lsmod | grep -q sch_htb; then
         fi
     else
         echo "sch_htb module loaded successfully."
+    fi
+fi
+
+# Check and load ifb module (crucial for download shaping)
+# NOTE: The latest wondershaper manages ifb internally, but we ensure the module is loaded.
+if ! lsmod | grep -q ifb; then
+    echo "ifb kernel module not loaded. Attempting to load it (needed for download shaping by wondershaper)..."
+    sudo modprobe ifb numifbs=1
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to load ifb kernel module. Download shaping might not work."
+        read -p "Do you want to continue anyway? (y/N): " continue_choice
+        if ! [[ "$continue_choice" =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    else
+        echo "ifb module loaded successfully."
     fi
 fi
 
@@ -418,7 +500,8 @@ if [ -n "$CLI_DOWNLOAD_UNMETERED" ]; then
         UNMETERED_DL_CONFIRMED="n"
     fi
 else
-    read -p "Is your download bandwidth unmetered? (y/N): " UNMETERED_DL_CONFIRMED
+    read -p "Is your download bandwidth unmetered? (y/N): " user_unmetered_choice
+    UNMETERED_DL_CONFIRMED=${user_unmetered_choice:-N} # Default to N if empty input
 fi
 
 if [[ "$UNMETERED_DL_CONFIRMED" =~ ^[Yy]$ ]]; then
@@ -487,14 +570,75 @@ echo ""
 
 # --- Apply Wondershaper Limits (Immediate) ---
 echo "Applying wondershaper limits to $SELECTED_NIC immediately..."
-echo "Command: sudo wondershaper $SELECTED_NIC $DOWNLOAD_LIMIT_KBPS $UPLOAD_LIMIT_KBPS"
+echo "Command: sudo wondershaper -a $SELECTED_NIC -d $DOWNLOAD_LIMIT_KBPS -u $UPLOAD_LIMIT_KBPS"
 
-sudo wondershaper "$SELECTED_NIC" "$DOWNLOAD_LIMIT_KBPS" "$UPLOAD_LIMIT_KBPS"
+# Clear existing wondershaper rules before applying new ones
+echo "Clearing any existing wondershaper rules on $SELECTED_NIC..."
+sudo wondershaper -c -a "$SELECTED_NIC"
+
+# Re-create and bring up ifb0 if download limiting is active (needed by wondershaper for ingress)
+if [[ "$UNMETERED_DL_CONFIRMED" =~ ^[Nn]$ ]]; then # Only if download is NOT unmetered
+    echo "Ensuring ifb0 interface is up for download shaping (needed by wondershaper)..."
+
+    # Step 1: Remove any existing ifb0 to ensure a clean slate
+    if ip link show ifb0 &> /dev/null; then
+        echo "Found existing ifb0 device. Attempting to remove it for a clean setup..."
+        sudo ip link set dev ifb0 down >/dev/null 2>&1
+        sudo ip link delete ifb0 type ifb >/dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            echo "Warning: Failed to remove old ifb0 device. This might indicate lingering tc rules or a permission issue."
+        else
+            echo "Old ifb0 device removed."
+        fi
+    fi
+
+    # Step 2: Create ifb0 if it doesn't exist after cleanup
+    if ! ip link show ifb0 &> /dev/null; then
+        echo "ifb0 device not found. Attempting to create it..."
+        sudo ip link add ifb0 type ifb
+        if [ $? -ne 0 ]; then
+            echo "Error: Failed to create ifb0 device. Download shaping will not work. Exiting."
+            exit 1
+        fi
+        echo "ifb0 device created."
+        sleep 0.5 # Give a moment for the system to register the new device
+    fi
+
+    # Step 3: Ensure ifb0 is up
+    if ip link show ifb0 | grep -q "state DOWN"; then
+        echo "Bringing ifb0 interface up..."
+        sudo ip link set dev ifb0 up
+        if [ $? -ne 0 ]; then
+            echo "Error: Failed to bring ifb0 interface up. Download shaping will not work. Exiting."
+            exit 1
+        fi
+        echo "ifb0 interface is up."
+        sleep 0.5 # Give a moment for the state change
+    fi
+
+    # Step 4: Verify ifb0 is actually present and up
+    MAX_RETRIES=10
+    RETRY_COUNT=0
+    while ! ip link show ifb0 | grep -q "state UP" && [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        echo "Waiting for ifb0 to be in UP state (attempt $((RETRY_COUNT+1))/$MAX_RETRIES)..."
+        sleep 1
+        RETRY_COUNT=$((RETRY_COUNT+1))
+    done
+
+    if ! ip link show ifb0 | grep -q "state UP"; then
+        echo "Error: ifb0 device is not in UP state after multiple attempts. Download shaping will likely fail. Exiting."
+        exit 1
+    else
+        echo "ifb0 device confirmed to be present and UP."
+    fi
+fi
+
+sudo wondershaper -a "$SELECTED_NIC" -d "$DOWNLOAD_LIMIT_KBPS" -u "$UPLOAD_LIMIT_KBPS"
 
 if [ $? -eq 0 ]; then
     echo "Wondershaper limits applied successfully for the current session."
     echo "Current limits for $SELECTED_NIC:"
-    sudo wondershaper "$SELECTED_NIC" status
+    sudo wondershaper -s -a "$SELECTED_NIC"
 else
     echo "Error: Failed to apply wondershaper limits for the current session."
     echo "Please review the errors above. This might be due to kernel module issues or misconfiguration."
@@ -505,6 +649,27 @@ echo ""
 
 # --- Configure Wondershaper Persistence with Systemd ---
 echo "Configuring wondershaper for persistence across reboots using systemd..."
+
+# Clean up old systemd service and config files if they exist
+echo "Checking for and cleaning up old wondershaper systemd configurations..."
+if systemctl is-active --quiet wondershaper.service; then
+    echo "Stopping active wondershaper.service..."
+    sudo systemctl stop wondershaper.service
+fi
+if systemctl is-enabled --quiet wondershaper.service; then
+    echo "Disabling wondershaper.service..."
+    sudo systemctl disable wondershaper.service
+fi
+if [ -f "/etc/systemd/system/wondershaper.service" ]; then
+    echo "Removing old /etc/systemd/system/wondershaper.service..."
+    sudo rm "/etc/systemd/system/wondershaper.service"
+fi
+if [ -f "/etc/systemd/wondershaper.conf" ]; then
+    echo "Removing old /etc/systemd/wondershaper.conf..."
+    sudo rm "/etc/systemd/wondershaper.conf"
+fi
+sudo systemctl daemon-reload # Reload daemon after removing files
+echo "Old systemd configurations cleaned up."
 
 # Create wondershaper.conf file
 echo "Creating /etc/systemd/wondershaper.conf..."
@@ -536,8 +701,8 @@ Wants=network.target
 Type=oneshot
 RemainAfterExit=yes
 EnvironmentFile=/etc/systemd/wondershaper.conf
-ExecStart=/usr/sbin/wondershaper $IFACE $DSPEED $USPEED
-ExecStop=/usr/sbin/wondershaper clear $IFACE
+ExecStart=/usr/sbin/wondershaper -a $IFACE -d $DSPEED -u $USPEED
+ExecStop=/usr/sbin/wondershaper -c -a $IFACE
 
 [Install]
 WantedBy=multi-user.target
@@ -568,4 +733,3 @@ echo "3. The '$SPEED_PERCENTAGE%' multiplier means if you consistently use your 
 echo "   you can still exceed your monthly bandwidth quota depending on your setting."
 echo "4. You can clear the limits at any time using: sudo wondershaper clear $SELECTED_NIC"
 echo "   To disable persistence, run: sudo systemctl disable --now wondershaper.service"
-echo "   Then you might want to remove the config and service files manually if desired."
